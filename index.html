@@ -550,7 +550,7 @@ let state = {
 
 let autosaveTimer = null;
 
-async function loadData(){
+async function loadData() {
   try {
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/app_data?id=eq.pl-score-app`,
@@ -558,12 +558,16 @@ async function loadData(){
         method: "GET",
         headers: {
           "apikey": SUPABASE_KEY,
-          "Authorization": `Bearer ${SUPABASE_KEY}`
+          "Authorization": `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json"
         }
       }
     );
 
-    if (!res.ok) throw new Error("Failed to load data");
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Supabase ${res.status}: ${errorText}`);
+    }
 
     const rows = await res.json();
 
@@ -574,22 +578,35 @@ async function loadData(){
       state.scores = data.scores || {};
       state.updatedAt = data.updated_at || null;
     } else {
+      console.warn("No data found in Supabase, using default data.");
+
       const d = defaultData();
       state.players = d.players;
       state.scores = d.scores;
+      state.updatedAt = null;
     }
 
     state.storageAvailable = true;
-    document.getElementById("storageWarning").style.display = "none";
+
+    const warning = document.getElementById("storageWarning");
+    if (warning) {
+      warning.style.display = "none";
+    }
 
   } catch (e) {
     console.error("Supabase load error:", e);
+
     state.storageAvailable = false;
-    document.getElementById("storageWarning").style.display = "block";
+
+    const warning = document.getElementById("storageWarning");
+    if (warning) {
+      warning.style.display = "block";
+    }
 
     const d = defaultData();
     state.players = d.players;
     state.scores = d.scores;
+    state.updatedAt = null;
   }
 
   renderAll();
