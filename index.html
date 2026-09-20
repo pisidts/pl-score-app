@@ -551,59 +551,81 @@ let state = {
 let autosaveTimer = null;
 
 async function loadData(){
-  // window.storage isn't injected at all outside a Claude artifact context
-  // (e.g. a locally double-clicked file) - detect that case up front.
-  if (typeof window.storage === "undefined") {
-    state.storageAvailable = false;
-    if (!state.scores) {
-      const d = defaultData();
-      state.players = d.players;
-      state.scores = d.scores;
-    }
-    document.getElementById("storageWarning").style.display = "block";
-    renderAll();
-    return;
-  }
   try {
-    // A missing key throws rather than returning null - that's the normal
-    // "nobody has saved yet" case, not a sign storage is broken.
-    let res = null;
-    try { res = await window.storage.get(STORAGE_KEY, true); } catch (_) { res = null; }
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/app_data?id=eq.pl-score-app`,
+      {
+        method: "GET",
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${SUPABASE_KEY}`
+        }
+      }
+    );
 
-    if (res && res.value) {
-      const parsed = JSON.parse(res.value);
-      state.players = parsed.players || [];
-      state.scores = parsed.scores || {};
-      state.updatedAt = parsed.updatedAt || null;
+    if (!res.ok) throw new Error("Failed to load data");
+
+    const rows = await res.json();
+
+    if (rows.length > 0) {
+      const data = rows[0];
+
+      state.players = data.players || [];
+      state.scores = data.scores || {};
+      state.updatedAt = data.updated_at || null;
     } else {
       const d = defaultData();
       state.players = d.players;
       state.scores = d.scores;
-      await persist(); // real failures (storage truly broken) surface here
     }
+
     state.storageAvailable = true;
     document.getElementById("storageWarning").style.display = "none";
+
   } catch (e) {
+    console.error("Supabase load error:", e);
     state.storageAvailable = false;
     document.getElementById("storageWarning").style.display = "block";
-    if (!state.scores) {
-      const d = defaultData();
-      state.players = d.players;
-      state.scores = d.scores;
-    }
+
+    const d = defaultData();
+    state.players = d.players;
+    state.scores = d.scores;
   }
+
   renderAll();
 }
-
 async function persist(){
   state.updatedAt = new Date().toISOString();
-  const payload = JSON.stringify({ players: state.players, scores: state.scores, updatedAt: state.updatedAt });
+
   try {
-    await window.storage.set(STORAGE_KEY, payload, true);
+    const res = await fetch(
+      "https://txeqfxulxokdywjyozgb.supabase.co/rest/v1/app_data?id=eq.pl-score-app",
+      {
+        method: "PATCH",
+        headers: {
+          "apikey": "sb_publishable_0o2BSpYA6vYpkPZIIycG5A_xX-W8SZB",
+          "Authorization": "Bearer sb_publishable_0o2BSpYA6vYpkPZIIycG5A_xX-W8SZB",
+          "Content-Type": "application/json",
+          "Prefer": "return=minimal"
+        },
+        body: JSON.stringify({
+          players: state.players,
+          scores: state.scores,
+          updated_at: state.updatedAt
+        })
+      }
+    );
+
+    if (!res.ok) {
+      throw new Error("Supabase save failed: " + res.status);
+    }
+
     state.storageAvailable = true;
     document.getElementById("storageWarning").style.display = "none";
     return true;
-  } catch(e){
+
+  } catch(e) {
+    console.error("Supabase save error:", e);
     state.storageAvailable = false;
     document.getElementById("storageWarning").style.display = "block";
     return false;
